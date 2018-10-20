@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <META HTTP-EQUIV="CACHE-CONTROL" CONTENT="NO-CACHE">
+    <META HTTP-EQUIV="PRAGMA" CONTENT="NO-CACHE">
+    <title>Delete devices</title>
+
+    <script type="text/javascript" src="https://code.jquery.com/jquery-2.2.4.min.js"></script>
+
+    <style type="text/css">
+        body {
+            font-family: monospace;
+            white-space: pre;
+            padding:0;
+            margin:0;
+        }
+        html,body,h2 {
+            padding:0;
+            margin:0;
+        }
+        input {
+            width: 200px;
+            font-family: monospace;
+        }
+        td {
+            vertical-align: top
+        }
+        table {
+            border-collapse: collapse;
+        }
+        select,
+        input,
+        button {
+            border-radius: 10px;
+            background-color:cyan;
+            font-family: monospace;
+            box-shadow: 2px 2px 1px 1px rgba(0, 0, 0, 0.75);
+        }
+    </style>
+
+</head>
+<body>
+    <h1>Device deletion</h1>
+    <table border=1>
+        <tr>
+            <td>Environment</td>
+            <td>
+                <select id="env">
+                    <option value="prod">prod</option>
+                    <option value="pre">pre</option>
+                    <option value="sit">sit</option>
+                </select>
+
+                <span id="selectedEnv"></span>
+            </td>
+        </tr>
+        <tr>
+            <td valifb>Login</td>
+            <td>Username <input id="username" value="ab@ab.com"> Password <input id="password" value="A1234567"> <button id="submit">Login</button>
+                <pre id="user"></pre>
+            </td>
+        </tr>
+        <tr>
+            <td>Devices <button id='deleteAll'>delete all</button></td>
+            <td><ul id="devices"></ul></td>
+        </tr>
+</table>
+
+
+
+    <script type="text/javascript">
+    let env = "prod";
+    const account = {
+        prod: "http://access.auth.theplatform.com/data/Account/2460537027",
+        pre: "http://access.auth.theplatform.com/data/Account/2444596865",
+        sit: "http://access.auth.theplatform.com/data/Account/2444596865",
+    }
+    const loginKey = {
+        prod: "tj1ZDSGM1a_2IWLl",
+        pre: "GJzAOf4nXKkEvpwR",
+        sit: "GJzAOf4nXKkEvpwR"
+    }
+    // const urlLogin = "https://api.neontv.co.nz/navajo-ws/rest/signin";
+    const urlLogin = "https://euid.theplatform.com/idm/web/Authentication/signIn?schema=1.0&form=json&pretty=true";
+    // const urlGetDevices = "https://api.neontv.co.nz/navajo-ws/rest/getdevicesforuser?userToken={USER_TOKEN}";
+    const urlGetDevices = "http://data.entitlement.theplatform.com/eds/data/Device?account={ACCOUNT}&schema=1.3.7&form=json&pipeline=audience&token={USER_TOKEN}";
+    const urlDeleteDevice = "http://data.entitlement.theplatform.com/eds/data/Device?token={USER_TOKEN}&account={ACCOUNT}&schema=1.2.0&form=json&pipeline=audience&byGuid={BY_GUID}&method=delete";
+    const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': 'Basic dGoxWkRTR00xYV8ySVdMbC9zYW1zdW5nNEBtYWlsaW5hdG9yLmNvbTpTYW1zdW5ndHYx'
+    };
+
+    let user;
+    let devices = [];
+
+    $(document).ready(function() {
+
+        // login("ab@ab.com", "A1234567");
+        $('#submit').click(function() {
+            env = $("select").val();
+            $('#selectedEnv').html(`selected env = ${env}`);
+            login($('#username').val(), $('#password').val());
+        });
+
+        $('#devices').on('click', 'button', function(e) {
+            deleteDevice($(this).attr('data'));
+        });
+
+        $('#deleteAll').on('click', function(e) {
+            deleteAllDevices()
+        });
+
+        init();
+    });
+
+    function init() {
+        $('#deleteAll').hide();
+    }
+
+    function login(u, p) {
+        let payload = JSON.stringify({
+            username: loginKey[env] + '/' + u,
+            password: p,
+            rememberMe: true
+        });
+
+        payload = {
+            username: loginKey[env] + '/' + u,
+            password: p,
+            rememberMe: true
+        };
+        $.ajax({
+            url: urlLogin,
+            data: payload,
+            dataType: 'json',
+            headers: headers,
+            error: function(reason) {
+                console.log(reason);
+            },
+            success: function(response) {
+                user = response;
+                $('#user').html(JSON.stringify(response,  undefined, 2));
+                // console.log(response.signInResponse);
+                getDevices();
+            }
+        });
+    }
+    function getDevices() {
+        $('#deleteAll').hide();
+        $('#devices').html('');
+
+        if (user.responseCode === 401) {
+            return;
+        }
+        $.ajax({
+            url: urlGetDevices.replace(/{ACCOUNT}/, account[env]).replace(/{USER_TOKEN}/, user.signInResponse.token),
+            error: function(reason) {
+                console.log(reason);
+            },
+            success: function(response) {
+                var _response = JSON.parse(response);
+                _response = _response.entries;
+                // console.log(_response);
+                // _response = [];
+                if (Array.isArray(_response) && _response.length > 0) {
+                    _response.forEach(function(device) {
+                        devices.push(device.guid);
+                        $("ul").append(`<li>${device.description} ${new Date(device.added).toLocaleString()} <button data='${device.guid}'>delete</button></li>`);
+                    });
+
+                    $('#deleteAll').show();
+                } else {
+                    $("ul").append(`<li>No devices!</li>`);
+                }
+            }
+        });
+
+    }
+    function deleteDevice(deviceId) {
+        let url = urlDeleteDevice.replace(/{ACCOUNT}/, account[env]).replace(/{BY_GUID}/, deviceId).replace(/{USER_TOKEN}/, user.signInResponse.token);
+        $.ajax({
+            url: url,
+            dataType: 'json',
+            error: function(reason) {
+                console.log(reason);
+            },
+            success: function(response) {
+                // console.log(response);
+                getDevices();
+            }
+        });
+    }
+
+    function deleteAllDevices() {
+        var promises = [];
+
+        devices.forEach(function(device) {
+            let url = urlDeleteDevice.replace(/{ACCOUNT}/, account[env]).replace(/{BY_GUID}/, device).replace(/{USER_TOKEN}/, user.signInResponse.token);
+            let api = $.ajax({
+                url: url,
+                dataType: 'json'
+            });
+            promises.push(api);
+        });
+
+        $.when(...promises).done(function (...response) {
+            console.log(response);
+            getDevices();
+        });
+    }
+    </script>
+</body>
+</html>
